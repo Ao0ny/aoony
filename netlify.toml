@@ -3,9 +3,9 @@
   publish = "."
 
 [functions]
-  # Functions 目录（相对于项目根目录即 deploy/）
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = ["@netlify/blobs"]
 
 # API 路由：将所有 /api/* 请求转发到 Functions
 [[redirects]]
