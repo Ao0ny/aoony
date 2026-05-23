@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 模型查看器</title>
+<style>
+:root {
+  --bg:#1e1e2e; --bg2:#181825; --bg3:#313244; --fg:#cdd6f4;
+  --fg2:#a6adc8; --fg3:#6c7086; --accent:#89b4fa; --green:#a6e3a1;
+  --red:#f38ba8; --yellow:#f9e2af; --orange:#fab387;
+  --radius:8px; --tr:0.2s ease;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);height:100vh;overflow:hidden;display:flex}
+
+/* SIDEBAR */
+#sidebar{width:350px;min-width:350px;background:var(--bg2);display:flex;flex-direction:column;border-right:1px solid var(--bg3);z-index:10}
+#sidebar-header{padding:16px 20px;border-bottom:1px solid var(--bg3);display:flex;align-items:center;justify-content:space-between}
+#sidebar-header h1{font-size:18px;font-weight:700}
+#sidebar-header .accent{color:var(--accent)}
+#engine-status{font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3)}
+#engine-status.loading{color:var(--yellow)}
+#engine-status.ready{color:var(--green);background:rgba(166,227,161,.15)}
+#engine-status.error{color:var(--red);background:rgba(243,139,168,.15)}
+
+/* Projects */
+#projects-section{padding:12px 16px;border-bottom:1px solid var(--bg3)}
+.section-label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--fg3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.section-label button{background:var(--accent);color:var(--bg);border:none;border-radius:4px;width:24px;height:24px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity var(--tr)}
+.section-label button:hover{opacity:.8}
+#project-list{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto}
+.project-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:var(--radius);cursor:pointer;transition:background var(--tr);font-size:13px;gap:4px}
+.project-item:hover{background:var(--bg3)}
+.project-item.active{background:var(--accent);color:var(--bg)}
+.project-item.active .badge{color:var(--bg);opacity:.7;background:rgba(0,0,0,.15)}
+.badge{font-size:11px;color:var(--fg3);background:var(--bg3);padding:1px 7px;border-radius:9px;white-space:nowrap}
+.project-item.active .badge{background:rgba(0,0,0,.15)}
+.badge.local{color:var(--orange);background:rgba(250,179,135,.15)}
+.project-item.active .badge.local{color:var(--bg);background:rgba(0,0,0,.15)}
+.project-name-inner{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-actions{display:flex;gap:2px}
+.project-actions button{background:none;border:none;color:inherit;font-size:13px;cursor:pointer;opacity:.4;padding:2px 4px;border-radius:4px;transition:all var(--tr)}
+.project-actions button:hover{opacity:1;background:rgba(0,0,0,.1)}
+.project-item.active .project-actions button:hover{background:rgba(0,0,0,.15)}
+
+/* Folder info bar */
+#folder-info{display:none;padding:8px 16px;background:rgba(250,179,135,.08);border-bottom:1px solid rgba(250,179,135,.2);font-size:11px;color:var(--orange)}
+#folder-info .path{opacity:.7;word-break:break-all}
+#folder-info .actions{display:flex;gap:8px;margin-top:4px}
+#folder-info button{background:var(--bg3);color:var(--fg2);border:none;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;transition:all var(--tr)}
+#folder-info button:hover{background:var(--orange);color:var(--bg)}
+
+/* Models */
+#models-section{flex:1;display:flex;flex-direction:column;padding:12px 16px;overflow:hidden}
+#model-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.model-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius);cursor:pointer;transition:background var(--tr);font-size:13px}
+.model-item:hover{background:var(--bg3)}
+.model-item.active{background:var(--accent);color:var(--bg)}
+.model-item.active .model-meta,.model-item.active .format-badge{color:var(--bg);opacity:.7}
+.model-item.active .format-badge{background:rgba(0,0,0,.15)}
+.model-icon{width:34px;height:34px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.model-info{flex:1;min-width:0}
+.model-name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-meta{font-size:11px;color:var(--fg3);display:flex;gap:8px}
+.format-badge{font-size:10px;padding:1px 6px;border-radius:3px;background:var(--bg3);color:var(--fg2);font-weight:600;text-transform:uppercase}
+.model-actions{display:flex;gap:2px}
+.model-actions button{background:none;border:none;cursor:pointer;opacity:0;font-size:15px;padding:2px 5px;border-radius:4px;transition:all var(--tr)}
+.model-item:hover .model-actions button{opacity:.6}
+.model-item:hover .model-actions button:hover{opacity:1}
+.btn-del{color:var(--red)}
+.btn-del:hover{background:var(--red)!important;color:#fff!important}
+.btn-info{color:var(--fg2)}
+.btn-info:hover{background:var(--bg3)!important;color:var(--fg)!important}
+.model-item.active .model-actions button{color:var(--bg);opacity:.5}
+.model-item.active .model-actions button:hover{opacity:1}
+
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 16px;color:var(--fg3);text-align:center;gap:8px;font-size:13px}
+.empty-state .icon{font-size:40px;opacity:.4}
+
+/* Upload */
+#upload-area{margin-top:8px;border:2px dashed var(--bg3);border-radius:var(--radius);padding:18px;text-align:center;cursor:pointer;transition:all var(--tr);flex-shrink:0}
+#upload-area:hover,#upload-area.drag-over{border-color:var(--accent);background:rgba(137,180,250,.05)}
+#upload-area.drag-over{background:rgba(137,180,250,.1)}
+#upload-area .icon{font-size:26px;margin-bottom:2px}
+#upload-area p{font-size:12px;color:var(--fg3)}
+#upload-area .hint{font-size:10px;color:var(--fg3);margin-top:2px}
+#file-input{display:none}
+
+/* VIEWER */
+#viewer-container{flex:1;position:relative;background:radial-gradient(ellipse at center,#252540 0%,#1a1a2e 100%)}
+#viewer-canvas{display:block;width:100%;height:100%}
+#viewer-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+#viewer-empty{color:var(--fg3);text-align:center}
+#viewer-empty .icon{font-size:64px;opacity:.3;margin-bottom:16px}
+#viewer-empty h2{font-size:18px;font-weight:500;margin-bottom:4px}
+#viewer-empty p{font-size:13px;opacity:.6}
+#viewer-loading{display:none;flex-direction:column;align-items:center;gap:12px;color:var(--fg2);pointer-events:auto}
+#viewer-loading .loading-model-name{font-size:15px;color:var(--fg);font-weight:600;max-width:400px;text-align:center;word-break:break-all}
+#viewer-loading .loading-phase{font-size:13px;color:var(--fg3)}
+.spinner{width:40px;height:40px;border:3px solid var(--bg3);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-progress{width:220px;display:none}
+#loading-progress .bar-track{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
+#loading-progress .bar-fill{height:100%;background:var(--accent);border-radius:3px;width:0;transition:width .15s ease}
+#loading-progress .text{font-size:11px;color:var(--fg3);margin-top:5px;text-align:center}
+#btn-cancel-load{display:none;margin-top:8px;padding:6px 22px;background:var(--red);color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;transition:opacity .2s}
+#btn-cancel-load:hover{opacity:.8}
+
+/* Toolbar */
+#toolbar{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:none;gap:6px;background:var(--bg2);border-radius:var(--radius);padding:6px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:5}
+#toolbar button{background:transparent;border:none;color:var(--fg2);font-size:13px;padding:7px 12px;border-radius:6px;cursor:pointer;transition:all var(--tr);display:flex;align-items:center;gap:5px}
+#toolbar button:hover{background:var(--bg3);color:var(--fg)}
+#toolbar button.active{background:var(--accent);color:var(--bg)}
+#toolbar .divider{width:1px;background:var(--bg3);margin:4px}
+
+/* Info overlay */
+#model-info-overlay{position:absolute;top:16px;left:16px;background:var(--bg2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--fg2);box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:5;display:none}
+#model-info-overlay span{color:var(--accent);font-weight:600}
+
+/* Error toast */
+#error-toast{position:absolute;top:20px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;padding:10px 20px;border-radius:var(--radius);font-size:13px;z-index:100;display:none;box-shadow:0 4px 16px rgba(243,139,168,.3);max-width:500px}
+
+/* Modals */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border-radius:12px;padding:24px;width:440px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.modal h2{font-size:18px;margin-bottom:16px}
+.modal input[type=text]{width:100%;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--bg3);background:var(--bg);color:var(--fg);font-size:14px;margin-bottom:16px;outline:none;transition:border-color var(--tr)}
+.modal input:focus{border-color:var(--accent)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.modal-actions button{padding:8px 20px;border-radius:var(--radius);font-size:14px;cursor:pointer;border:none;transition:opacity var(--tr)}
+.modal-actions button:hover{opacity:.85}
+.btn-cancel{background:var(--bg3);color:var(--fg)}
+.btn-confirm{background:var(--accent);color:var(--bg);font-weight:600}
+.btn-danger{background:var(--red);color:#fff;font-weight:600}
+
+/* Project type selector */
+.project-type-row{display:flex;gap:8px;margin-bottom:16px}
+.type-option{flex:1;padding:10px;border:2px solid var(--bg3);border-radius:var(--radius);text-align:center;cursor:pointer;transition:all var(--tr);font-size:13px}
+.type-option:hover{border-color:var(--fg3)}
+.type-option.selected{border-color:var(--accent);background:rgba(137,180,250,.08)}
+.type-option .icon{font-size:24px;margin-bottom:4px;display:block}
+.type-option .label{font-weight:600;margin-bottom:2px}
+.type-option .desc{font-size:11px;color:var(--fg3)}
+
+/* Folder picker */
+.folder-picker-row{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.folder-picker-row button{background:var(--bg3);color:var(--fg2);border:none;padding:8px 14px;border-radius:var(--radius);font-size:13px;cursor:pointer;transition:all var(--tr);white-space:nowrap}
+.folder-picker-row button:hover{background:var(--accent);color:var(--bg)}
+.folder-path-display{flex:1;font-size:12px;color:var(--fg3);padding:8px 12px;background:var(--bg);border-radius:var(--radius);min-height:34px;display:flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--bg3)}
+.folder-path-display.set{color:var(--orange);border-color:rgba(250,179,135,.3)}
+
+/* Confirm dialog */
+#confirm-dialog .modal{width:400px}
+#confirm-dialog p{color:var(--fg2);margin-bottom:16px;font-size:14px;line-height:1.6}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:var(--radius);background:var(--green);color:var(--bg);font-size:13px;font-weight:600;z-index:300;opacity:0;pointer-events:none;transition:opacity .3s;box-shadow:0 4px 16px rgba(166,227,161,.3)}
+#toast.show{opacity:1}
+#toast.error{background:var(--red);color:#fff}
+
+/* Upload progress */
+#upload-progress{display:none;margin-top:8px}
+#upload-progress .bar-track{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+#upload-progress .bar-fill{height:100%;background:var(--accent);border-radius:3px;width:0;transition:width .3s ease}
+#upload-progress .text{font-size:11px;color:var(--fg3);margin-top:4px;text-align:center}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--fg3)}
+
+/* Mobile */
+@media(max-width:768px){
+  #sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform var(--tr)}
+  #sidebar.open{transform:translateX(0)}
+  #menu-toggle{display:flex!important;position:absolute;top:12px;left:12px;z-index:20}
+}
+#menu-toggle{display:none;background:var(--bg2);border:none;color:var(--fg);width:40px;height:40px;border-radius:var(--radius);font-size:20px;cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+<div id="sidebar-header">
+  <h1><span class="accent">3D</span> 模型查看器</h1>
+  <span id="engine-status" class="loading">STEP…</span>
+</div>
+
+<div id="projects-section">
+  <div class="section-label">项目列表<button id="btn-new-project" title="新建项目">+</button></div>
+  <div id="project-list">
+    <div class="empty-state" style="padding:16px 0"><div class="icon">📁</div><span>暂无项目，点击 + 创建</span></div>
+  </div>
+</div>
+
+<div id="folder-info">
+  <div class="path" id="folder-path"></div>
+  <div class="actions">
+    <button id="btn-refresh" title="刷新文件列表">🔄 刷新</button>
+    <button id="btn-change-folder" title="更换关联文件夹">📂 更换</button>
+  </div>
+</div>
+
+<div id="models-section">
+  <div class="section-label">模型文件</div>
+  <div id="model-list">
+    <div class="empty-state"><div class="icon">📦</div><span>选择项目后即可查看模型</span></div>
+  </div>
+  <div id="upload-area" style="display:none">
+    <div class="icon">📤</div>
+    <p>拖拽文件或点击上传</p>
+    <p class="hint">STEP / STP / STL / OBJ / GLTF / GLB</p>
+  </div>
+  <div id="upload-progress">
+    <div class="bar-track"><div class="bar-fill" id="progress-fill"></div></div>
+    <div class="text" id="progress-text"></div>
+  </div>
+  <input type="file" id="file-input" accept=".step,.stp,.stl,.obj,.gltf,.glb" multiple>
+</div>
+</div>
+
+<!-- VIEWER -->
+<div id="viewer-container">
+<button id="menu-toggle" onclick="toggleSidebar()">☰</button>
+<canvas id="viewer-canvas"></canvas>
+<div id="viewer-overlay">
+  <div id="viewer-empty"><div class="icon">🔍</div><h2>选择模型开始查看</h2><p>左侧选择项目后点击模型即可预览</p></div>
+  <div id="viewer-loading"><div class="spinner"></div><div class="loading-model-name" id="loading-name"></div><div class="loading-phase" id="loading-phase">正在加载模型…</div><div id="loading-progress"><div class="bar-track"><div class="bar-fill" id="loading-bar-fill"></div></div><div class="text" id="loading-bar-text"></div></div><button id="btn-cancel-load" onclick="window._cancelLoad()">✕ 取消加载</button></div>
+</div>
+<div id="model-info-overlay">面数:<span id="info-faces">-</span> &nbsp; 顶点:<span id="info-verts">-</span></div>
+<div id="toolbar">
+  <button id="btn-fit" title="适应(F)">⊞ 适应</button>
+  <button id="btn-reset" title="重置(R)">↺ 重置</button>
+  <div class="divider"></div>
+  <button id="btn-top">俯视</button>
+  <button id="btn-front">前视</button>
+  <button id="btn-right">右视</button>
+  <div class="divider"></div>
+  <button id="btn-grid" class="active">▦ 网格</button>
+  <button id="btn-wireframe">◇ 线框</button>
+</div>
+<div id="error-toast"></div>
+</div>
+
+<!-- Project modal -->
+<div class="modal-overlay" id="project-modal">
+<div class="modal">
+  <h2 id="modal-title">新建项目</h2>
+  <div class="project-type-row" id="project-type-row">
+    <div class="type-option selected" data-type="local" onclick="selectProjectType('local')">
+      <span class="icon">📂</span>
+      <div class="label">本地文件夹</div>
+      <div class="desc">关联目录，实时读取</div>
+    </div>
+    <div class="type-option" data-type="db" onclick="selectProjectType('db')">
+      <span class="icon">☁️</span>
+      <div class="label">云端存储</div>
+      <div class="desc">上传到云端，多端共享</div>
+    </div>
+  </div>
+  <div id="folder-picker-section">
+    <div class="folder-picker-row">
+      <button id="btn-pick-folder">选择文件夹</button>
+      <div class="folder-path-display" id="folder-path-display">未选择文件夹</div>
+    </div>
+  </div>
+  <input type="text" id="project-name-input" placeholder="项目名称（可选，留空使用文件夹名）" maxlength="50">
+  <div class="modal-actions">
+    <button class="btn-cancel" onclick="closeModal('project-modal')">取消</button>
+    <button class="btn-confirm" id="btn-confirm-project">创建</button>
+  </div>
+</div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="modal-overlay" id="confirm-dialog">
+<div class="modal">
+  <h2>确认操作</h2>
+  <p id="confirm-message"></p>
+  <div class="modal-actions">
+    <button class="btn-cancel" onclick="closeModal('confirm-dialog')">取消</button>
+    <button class="btn-danger" id="btn-confirm-delete">确认删除</button>
+  </div>
+</div>
+</div>
+<div id="toast"></div>
+
+<!-- ===== SCRIPTS ===== -->
+<script>
+// STEP 解析 Web Worker —— 防止大文件 WASM 解析阻塞主线程
+let stepWorkerReady=false, stepWorker=null;
+let stepWorkerCode=null;
+
+function initStepWorker(){
+  const s=document.getElementById('engine-status');
+  s.textContent='STEP…'; s.className='loading';
+  s.title='';
+
+  if(!stepWorkerCode){
+    const CDN='https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist';
+    stepWorkerCode=`
+let engine=null,ready=false;
+
+async function init(){
+  try{
+    importScripts('${CDN}/occt-import-js.js');
+    engine=await occtimportjs({locateFile:p=>'${CDN}/'+p});
+    ready=true;
+    self.postMessage({type:'ready'});
+  }catch(e){
+    self.postMessage({type:'error',error:'Engine init failed: '+e.message});
+  }
+}
+
+self.onmessage=async e=>{
+  if(e.data.type==='init'){await init();return}
+  if(e.data.type==='parse'){
+    if(!ready){self.postMessage({type:'error',error:'Engine not ready'});return}
+    try{
+      const r=engine.ReadStepFile(new Uint8Array(e.data.buffer));
+      if(!r||!r.meshes||!r.meshes.length){
+        self.postMessage({type:'error',error:'No geometry data'});return;
+      }
+      // 关键：WASM 返回的 TypedArray 是 WASM 堆视图，不能 transfer
+      // 必须通过结构克隆安全传递（会自动拷贝数据到新的 ArrayBuffer）
+      const meshCount=r.meshes.length;
+      const meshes=r.meshes.map((md,idx)=>{
+        const m={};
+        const pos=md.attributes?md.attributes.position:null;
+        if(pos){
+          if(pos instanceof Float32Array) m.positions=pos;
+          else if(pos.array instanceof Float32Array) m.positions=pos.array;
+          else m.positions=new Float32Array(pos.array||pos);
+        }
+        const norm=md.attributes?md.attributes.normal:null;
+        if(norm){
+          if(norm instanceof Float32Array) m.normals=norm;
+          else if(norm.array instanceof Float32Array) m.normals=norm.array;
+          else m.normals=new Float32Array(norm.array||norm);
+        }
+        if(md.index){
+          const idx=md.index;
+          if(idx instanceof Uint32Array) m.indices=idx;
+          else if(idx.array instanceof Uint32Array) m.indices=idx.array;
+          else m.indices=new Uint32Array(idx.array||idx);
+        }
+        if(md.color&&Array.isArray(md.color)&&md.color.length>=3)m.color=md.color.slice(0,3);
+        else if(md.brep_faces&&md.brep_faces.length){const fc=md.brep_faces[0].color;if(fc&&fc.length>=3)m.color=fc.slice(0,3)}
+        return m;
+      });
+      // 不使用 transferables —— WASM 堆视图 transfer 会摧毁 Worker
+      self.postMessage({type:'result',meshes,meshCount});
+    }catch(e){self.postMessage({type:'error',error:e.message})}
+  }
+};
+
+init();
+`;
+  }
+
+  stepWorkerReady=false;
+  try{
+    if(stepWorker)try{stepWorker.terminate()}catch(e){}
+    stepWorker=new Worker(URL.createObjectURL(new Blob([stepWorkerCode],{type:'application/javascript'})));
+    stepWorker.onmessage=e=>{
+      const d=e.data;
+      if(d.type==='ready'){
+        stepWorkerReady=true;
+        s.textContent='✓ STEP'; s.className='ready';
+      }else if(d.type==='error'&&!stepWorkerReady){
+        s.textContent='✗ STEP'; s.className='error';
+        s.title=d.error||'STEP引擎错误';
+      }
+    };
+    stepWorker.onerror=()=>{
+      stepWorkerReady=false;
+      s.textContent='✗ STEP'; s.className='error';
+      s.title='STEP Worker 连接失败';
+    };
+  }catch(e){
+    s.textContent='✗ STEP'; s.className='error';
+    s.title='Worker 创建失败: '+e.message;
+    console.error('STEP Worker:',e);
+  }
+}
+
+initStepWorker();
+</script>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {STLLoader} from 'three/addons/loaders/STLLoader.js';
+import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+// ========== Storage: Cloud (Netlify) / Local (IndexedDB) ==========
+let USE_CLOUD=false;
+const API_BASE='/api';
+// API 调用辅助函数
+async function apiFetch(path,opts={}){
+  const url=`${API_BASE}${path}`;
+  const res=await fetch(url,opts);
+  if(!res.ok){
+    const body=await res.json().catch(()=>({}));
+    const msg=body.error||`HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  const ct=res.headers.get('content-type')||'';
+  if(ct.includes('application/json'))return res.json();
+  return res;
+}
+
+// IndexedDB (本地回退)
+const DB='ModelViewerDBv2';let db;
+function openDB(){return new Promise((r,j)=>{
+  const q=indexedDB.open(DB,1);
+  q.onupgradeneeded=e=>{
+    const d=e.target.result;
+    if(!d.objectStoreNames.contains('projects'))d.createObjectStore('projects',{keyPath:'id'});
+    if(!d.objectStoreNames.contains('models'))d.createObjectStore('models',{keyPath:'id'});
+  };
+  q.onsuccess=e=>{db=e.target.result;r(db)};
+  q.onerror=()=>j(q.error);
+})}
+const dba=(s,i)=>new Promise((r,j)=>{const t=db.transaction(s,'readwrite');t.objectStore(s).add(i);t.oncomplete=r;t.onerror=()=>j(t.error)});
+const dbp=(s,i)=>new Promise((r,j)=>{const t=db.transaction(s,'readwrite');t.objectStore(s).put(i);t.oncomplete=r;t.onerror=()=>j(t.error)});
+const dbg=(s,i)=>new Promise((r,j)=>{const t=db.transaction(s,'readonly');const q=t.objectStore(s).get(i);q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)});
+const dbaa=s=>new Promise((r,j)=>{const t=db.transaction(s,'readonly');const q=t.objectStore(s).getAll();q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)});
+const dbd=(s,i)=>new Promise((r,j)=>{const t=db.transaction(s,'readwrite');t.objectStore(s).delete(i);t.oncomplete=r;t.onerror=()=>j(t.error)});
+
+// ========== State ==========
+const S={
+  projects:[], pid:null, mid:null, models:[], wireframe:false, showGrid:true,
+  projectType:'local', // modal default
+  selectedFolderHandle:null, // modal temp
+};
+function pid(){return S.pid}
+function mid(){return S.mid}
+function gid(){return Date.now().toString(36)+Math.random().toString(36).substr(2,9)}
+
+// ========== Toast ==========
+let tt;
+function toast(m,e){const el=document.getElementById('toast');el.textContent=m;el.className=e?'show error':'show';clearTimeout(tt);tt=setTimeout(()=>el.className='',2500)}
+function showError(m){const el=document.getElementById('error-toast');el.textContent=m;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}
+function hideError(){document.getElementById('error-toast').style.display='none'}
+
+// Upload progress
+function showUploadProgress(cur,total){
+  const el=document.getElementById('upload-progress');
+  const fill=document.getElementById('progress-fill');
+  const txt=document.getElementById('progress-text');
+  el.style.display='block';
+  const pct=Math.round(cur/total*100);
+  fill.style.width=pct+'%';
+  txt.textContent=`正在导入 ${cur}/${total} (${pct}%)`;
+  document.getElementById('upload-area').style.display='none';
+}
+function hideUploadProgress(){
+  document.getElementById('upload-progress').style.display='none';
+  document.getElementById('progress-fill').style.width='0';
+  // 恢复上传区域显示
+  const p=S.projects.find(x=>x.id===pid());
+  document.getElementById('upload-area').style.display=p&&p.type==='db'?'block':'none';
+}
+
+// ========== Modal ==========
+function openModal(id){document.getElementById(id).classList.add('show')}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+window.closeModal=closeModal;
+
+// Project type selector
+let selectedType='local';
+window.selectProjectType=function(type){
+  selectedType=type;
+  document.querySelectorAll('.type-option').forEach(o=>o.classList.toggle('selected',o.dataset.type===type));
+  document.getElementById('folder-picker-section').style.display=type==='local'?'block':'none';
+  const inp=document.getElementById('project-name-input');
+  inp.placeholder=type==='local'?'项目名称（可选，留空使用文件夹名）':'输入项目名称...';
+};
+selectProjectType('local');
+
+// Folder picker
+let pendingFolderHandle=null;
+document.getElementById('btn-pick-folder').addEventListener('click',async()=>{
+  if(!window.showDirectoryPicker){toast('您的浏览器不支持本地文件夹功能，请使用 Chrome 或 Edge',true);return}
+  try{
+    const h=await window.showDirectoryPicker();
+    pendingFolderHandle=h;
+    document.getElementById('folder-path-display').textContent=h.name;
+    document.getElementById('folder-path-display').classList.add('set');
+    // Auto-fill project name
+    if(!document.getElementById('project-name-input').value.trim()){
+      document.getElementById('project-name-input').value=h.name;
+    }
+  }catch(e){
+    if(e.name!=='AbortError')toast('选择文件夹失败: '+e.message,true);
+  }
+});
+
+// Project modal open
+document.getElementById('btn-new-project').addEventListener('click',()=>{
+  selectedType='local'; pendingFolderHandle=null;
+  document.getElementById('modal-title').textContent='新建项目';
+  document.getElementById('project-name-input').value='';
+  document.getElementById('project-name-input').placeholder='项目名称（可选，留空使用文件夹名）';
+  document.getElementById('btn-confirm-project').textContent='创建';
+  document.getElementById('btn-confirm-project').dataset.mode='create';
+  document.getElementById('folder-path-display').textContent='未选择文件夹';
+  document.getElementById('folder-path-display').classList.remove('set');
+  selectProjectType('local');
+  openModal('project-modal');
+  document.getElementById('project-name-input').focus();
+});
+
+// Project modal confirm
+document.getElementById('btn-confirm-project').addEventListener('click',async()=>{
+  try{
+  const name=document.getElementById('project-name-input').value.trim();
+  const mode=document.getElementById('btn-confirm-project').dataset.mode;
+
+  if(mode==='rename'){
+    const rid=document.getElementById('btn-confirm-project').dataset.renameId;
+    await renameProject(rid,name||'未命名项目');
+    closeModal('project-modal');
+    return;
+  }
+
+  if(selectedType==='local'){
+    if(!pendingFolderHandle){toast('请先选择一个本地文件夹',true);return}
+    const pname=name||pendingFolderHandle.name||'本地项目';
+    await createLocalProject(pname,pendingFolderHandle);
+  }else{
+    if(!name){toast('请输入项目名称',true);return}
+    await createProject(name,'db');
+  }
+  closeModal('project-modal');
+  }catch(e){toast('创建失败: '+e.message,true);console.error(e)}
+});
+
+document.getElementById('project-name-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter')document.getElementById('btn-confirm-project').click();
+  if(e.key==='Escape')closeModal('project-modal');
+});
+
+// ========== Project CRUD ==========
+async function createProject(name,type){
+  const p={id:gid(),name,type,createdAt:new Date().toISOString(),folderHandleId:null};
+  if(USE_CLOUD)await apiFetch('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+  else await dba('projects',p);
+  S.projects.push(p);
+  renderAll();
+  toast(`项目「${name}」已创建`);
+  await selectProject(p.id);
+}
+
+async function createLocalProject(name,dirHandle){
+  // Store handle in IDB
+  const handleId=gid();
+  await storeHandle(handleId,dirHandle);
+
+  const p={id:gid(),name,type:'local',createdAt:new Date().toISOString(),folderHandleId:handleId};
+  await dba('projects',p);
+  S.projects.push(p);
+  renderAll();
+  toast(`本地项目「${name}」已创建`);
+  await selectProject(p.id);
+}
+
+async function renameProject(pid,newName){
+  const p=S.projects.find(x=>x.id===pid);
+  if(!p)return;
+  p.name=newName;
+  if(USE_CLOUD)await apiFetch(`/projects/${pid}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})});
+  else await dbp('projects',p);
+  if(S.pid===pid){
+    document.getElementById('sidebar-header').querySelector('h1').innerHTML=`<span class="accent">3D</span> ${escHtml(newName)}`;
+  }
+  renderProjectList();
+  toast('项目已重命名');
+}
+
+async function deleteProject(pid){
+  const p=S.projects.find(x=>x.id===pid);
+  if(!p)return;
+
+  // 删除模型
+  if(USE_CLOUD)await apiFetch(`/projects/${pid}`,{method:'DELETE'});
+  else{
+    const all=await dbaa('models');
+    for(const m of all){if(m.projectId===pid)await dbd('models',m.id)}
+    await dbd('projects',pid);
+  }
+
+  // Delete handle if local (FileSystemDirectoryHandle 仍需 IndexedDB)
+  if(p.folderHandleId)await deleteHandle(p.folderHandleId);
+
+  S.projects=S.projects.filter(x=>x.id!==pid);
+
+  if(S.pid===pid){S.pid=null;S.mid=null;S.models=[];clearViewer()}
+  renderAll();
+  toast(`项目「${p.name}」已删除`);
+}
+
+// ========== Handle Storage (separate DB for folder handles) ==========
+async function getHandleDB(){
+  return new Promise((r,j)=>{
+    const q=indexedDB.open('ModelViewerHandles',1);
+    q.onupgradeneeded=e=>{if(!e.target.result.objectStoreNames.contains('handles'))e.target.result.createObjectStore('handles')};
+    q.onsuccess=e=>r(e.target.result);
+    q.onerror=()=>j(q.error);
+  });
+}
+async function storeHandle(id,handle){
+  const hdb=await getHandleDB();
+  return new Promise((r,j)=>{
+    const t=hdb.transaction('handles','readwrite');
+    t.objectStore('handles').put(handle,id);
+    t.oncomplete=r;t.onerror=()=>j(t.error);
+  });
+}
+async function getHandle(id){
+  const hdb=await getHandleDB();
+  return new Promise((r,j)=>{
+    const t=hdb.transaction('handles','readonly');
+    const q=t.objectStore('handles').get(id);
+    q.onsuccess=()=>r(q.result);
+    q.onerror=()=>j(q.error);
+  });
+}
+async function deleteHandle(id){
+  const hdb=await getHandleDB();
+  return new Promise((r,j)=>{
+    const t=hdb.transaction('handles','readwrite');
+    t.objectStore('handles').delete(id);
+    t.oncomplete=r;t.onerror=()=>j(t.error);
+  });
+}
+
+// ========== Delete confirm ==========
+let pendingDel=null;
+function confirmDelete(type,id,name){
+  pendingDel={type,id,name};
+  document.getElementById('confirm-message').textContent=
+    type==='project'
+    ?`确定要删除项目「${name}」吗？其中的所有模型也将被删除。此操作不可撤销。`
+    :`确定要删除模型「${name}」吗？此操作不可撤销。`;
+  openModal('confirm-dialog');
+}
+document.getElementById('btn-confirm-delete').addEventListener('click',async()=>{
+  if(!pendingDel)return;
+  if(pendingDel.type==='project')await deleteProject(pendingDel.id);
+  else await deleteModel(pendingDel.id);
+  pendingDel=null;
+  closeModal('confirm-dialog');
+});
+
+// ========== Select project ==========
+async function selectProject(pid){
+  S.pid=pid; S.mid=null; clearViewer();
+  const p=S.projects.find(x=>x.id===pid);
+  if(!p)return;
+
+  document.getElementById('sidebar-header').querySelector('h1').innerHTML=`<span class="accent">3D</span> ${escHtml(p.name)}`;
+
+  if(p.type==='local'){
+    await loadLocalProject(p);
+  }else{
+    await loadDbProject(p);
+  }
+  renderAll();
+}
+
+async function loadDbProject(p){
+  try{
+    if(USE_CLOUD){
+      const models=await apiFetch(`/models/${p.id}`);
+      S.models=models.sort((a,b)=>new Date(b.uploadedAt)-new Date(a.uploadedAt));
+    }else{
+      const all=await dbaa('models');
+      S.models=all.filter(m=>m.projectId===p.id).sort((a,b)=>new Date(b.uploadedAt)-new Date(a.uploadedAt));
+    }
+  }catch(e){
+    console.error('Load models:',e);
+    S.models=[];
+    toast(`加载模型列表失败: ${e.message}`,true);
+  }
+  document.getElementById('folder-info').style.display='none';
+  document.getElementById('upload-area').style.display='block';
+}
+
+async function loadLocalProject(p){
+  document.getElementById('upload-area').style.display='none';
+  try{
+    const handle=await getHandle(p.folderHandleId);
+    if(!handle){throw new Error('文件夹句柄丢失')}
+
+    // Request permission
+    const perm=await handle.queryPermission({mode:'read'});
+    if(perm!=='granted'){
+      const req=await handle.requestPermission({mode:'read'});
+      if(req!=='granted'){throw new Error('文件夹读取权限被拒绝')}
+    }
+
+    // List supported files
+    const models=[];
+    const exts=['step','stp','stl','obj','gltf','glb'];
+    for await(const entry of handle.values()){
+      if(entry.kind==='file'){
+        const ext=entry.name.split('.').pop().toLowerCase();
+        if(exts.includes(ext)){
+          models.push({
+            id:gid(),
+            projectId:p.id,
+            name:entry.name,
+            format:ext,
+            size:0, // will be filled on read
+            fileHandle:entry,
+            isLocal:true,
+            uploadedAt:new Date().toISOString(),
+          });
+        }
+      }
+    }
+    models.sort((a,b)=>a.name.localeCompare(b.name));
+    S.models=models;
+
+    // Show folder info
+    document.getElementById('folder-info').style.display='block';
+    document.getElementById('folder-path').textContent='📁 '+handle.name;
+
+    if(models.length===0){
+      toast('文件夹中未找到支持的模型文件',true);
+    }
+  }catch(e){
+    console.error('Load local project:',e);
+    S.models=[];
+    document.getElementById('folder-info').style.display='block';
+    document.getElementById('folder-path').textContent='⚠ '+e.message;
+    toast('加载文件夹失败: '+e.message,true);
+  }
+}
+
+// Refresh local project
+document.getElementById('btn-refresh').addEventListener('click',async()=>{
+  if(!S.pid)return;
+  const p=S.projects.find(x=>x.id===S.pid);
+  if(p&&p.type==='local'){
+    await loadLocalProject(p);
+    renderModelList();
+    toast('文件列表已刷新');
+  }
+});
+
+// Change folder binding
+document.getElementById('btn-change-folder').addEventListener('click',async()=>{
+  if(!S.pid)return;
+  const p=S.projects.find(x=>x.id===S.pid);
+  if(!p||p.type!=='local')return;
+
+  try{
+    const h=await window.showDirectoryPicker();
+    if(p.folderHandleId)await deleteHandle(p.folderHandleId);
+    const hid=gid();
+    await storeHandle(hid,h);
+    p.folderHandleId=hid;
+    if(USE_CLOUD)await apiFetch(`/projects/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({folderHandleId:hid})});
+    else await dbp('projects',p);
+    await loadLocalProject(p);
+    renderModelList();
+    toast('文件夹已更换');
+  }catch(e){
+    if(e.name!=='AbortError')toast('更换失败: '+e.message,true);
+  }
+});
+
+// ========== Delete Model ==========
+async function deleteModel(mid){
+  const m=S.models.find(x=>x.id===mid);
+  if(!m)return;
+  if(S.mid===mid){S.mid=null;clearViewer()}
+  if(!m.isLocal){if(USE_CLOUD)await apiFetch(`/models/${mid}`,{method:'DELETE'});else await dbd('models',mid);}
+  S.models=S.models.filter(x=>x.id!==mid);
+  renderModelList();
+  toast(`「${m.name}」已删除`);
+}
+
+// ========== View Model ==========
+async function viewModel(mid){
+  const m=S.models.find(x=>x.id===mid);
+  if(!m){showError('模型未找到');return}
+
+  showLoading(true,m.name);
+  hideError();
+
+  // 让浏览器有机会渲染 loading 动画
+  await new Promise(r => requestAnimationFrame(r));
+
+  try{
+    let data;
+    if(m.isLocal){
+      const file=await m.fileHandle.getFile();
+      data=await file.arrayBuffer();
+      m.size=file.size;
+    }else if(USE_CLOUD){
+      // 从云端 API 获取模型二进制数据
+      updateLoadingPhase('download','正在从云端下载模型…',-1,'');
+      const resp=await fetch(`${API_BASE}/model-data/${mid}`);
+      if(!resp.ok)throw new Error(`模型数据未找到 (${resp.status})`);
+      data=await resp.arrayBuffer();
+    }else{
+      // 本地 IndexedDB
+      if(!m.data){
+        const dbm=await dbg('models',mid);
+        if(!dbm){throw new Error('模型数据未找到')}
+        data=dbm.data;
+      }else{
+        data=m.data;
+      }
+    }
+
+    let obj;
+    switch(m.format){
+      case'stl':obj=await loadSTL(data);break;
+      case'obj':obj=await loadOBJ(data);break;
+      case'gltf':case'glb':obj=await loadGLTF(data);break;
+      case'step':case'stp':obj=await loadSTEP(data,(phase,sub,prog,progTxt)=>updateLoadingPhase(sub||phase,'',prog,progTxt));break;
+      default:throw new Error('不支持的格式: '+m.format);
+    }
+    if(!obj)throw new Error('模型为空');
+
+    displayModel(obj,m);
+    S.mid=mid;
+    renderModelList();
+  }catch(e){
+    if(cancelLoadFlag)return; // 用户取消，不显示错误
+    console.error('View:',e);
+    showError(`加载失败: ${e.message}`);
+    S.mid=null;
+  }finally{showLoading(false)}
+}
+
+// ========== 3D Loaders ==========
+function loadSTL(buf){return new Promise((r,j)=>{
+  const l=new STLLoader();
+  try{
+    const g=l.parse(buf);g.computeVertexNormals();
+    const m=new THREE.Mesh(g,new THREE.MeshPhongMaterial({color:0x89b4fa,specular:0x111111,shininess:30}));
+    const grp=new THREE.Group();grp.add(m);r(grp);
+  }catch(e){j(e)}
+})}
+
+function loadOBJ(buf){return new Promise((r,j)=>{
+  const l=new OBJLoader();
+  try{
+    const t=new TextDecoder().decode(buf);
+    const o=l.parse(t);
+    o.traverse(c=>{if(c.isMesh)c.material=new THREE.MeshPhongMaterial({color:c.material?.color||0x89b4fa,specular:0x111111,shininess:30})});
+    r(o);
+  }catch(e){j(e)}
+})}
+
+function loadGLTF(buf){return new Promise((r,j)=>{
+  const l=new GLTFLoader();
+  l.parse(buf,'',gltf=>{
+    gltf.scene.traverse(c=>{if(c.isMesh&&!c.material)c.material=new THREE.MeshPhongMaterial({color:0x89b4fa,specular:0x111111,shininess:30})});
+    r(gltf.scene);
+  },e=>j(e));
+})}
+
+async function loadSTEP(buf,onProgress){
+  if(!stepWorkerReady||!stepWorker)throw new Error('STEP引擎未就绪，请稍后重试');
+
+  return new Promise((resolve,reject)=>{
+    let resolved=false;
+    let timeoutId;
+
+    const cleanup=()=>{
+      if(timeoutId)clearTimeout(timeoutId);
+      stepWorker.removeEventListener('message',onMsg);
+      stepWorker.removeEventListener('error',onErr);
+    };
+
+    const finish=(err,result)=>{
+      if(resolved)return;
+      resolved=true;
+      cleanup();
+      if(err)reject(err);else resolve(result);
+    };
+
+    const onMsg=e=>{
+      if(e.data.type==='error'){
+        finish(new Error(e.data.error||'STEP解析失败'));
+        return;
+      }
+      if(e.data.type!=='result'){finish(new Error('未知响应'));return}
+
+      const meshes=e.data.meshes;
+      const totalMeshes=e.data.meshCount||meshes.length;
+      if(!meshes||!meshes.length){finish(new Error('STEP无几何数据'));return}
+
+      const grp=new THREE.Group();
+      const CHUNK=50;
+
+      function buildMeshes(startIdx){
+        if(cancelLoadFlag){finish(new Error('已取消'));return}
+
+        const end=Math.min(startIdx+CHUNK,meshes.length);
+        for(let i=startIdx;i<end;i++){
+          const md=meshes[i];
+          if(!md.positions||!md.positions.length)continue;
+
+          const g=new THREE.BufferGeometry();
+          // 结构化克隆传递的 TypedArray 已经是独立副本，可直接用
+          g.setAttribute('position',new THREE.BufferAttribute(md.positions,3));
+          if(md.normals&&md.normals.length)g.setAttribute('normal',new THREE.BufferAttribute(md.normals,3));
+          else g.computeVertexNormals();
+          if(md.indices&&md.indices.length)g.setIndex(new THREE.BufferAttribute(md.indices,1));
+
+          let color=0x89b4fa;
+          if(md.color&&md.color.length>=3)color=new THREE.Color(md.color[0],md.color[1],md.color[2]).getHex();
+
+          const mat=new THREE.MeshPhongMaterial({color,specular:0x111111,shininess:40});
+          grp.add(new THREE.Mesh(g,mat));
+        }
+
+        const progress=Math.round(end/meshes.length*100);
+        if(onProgress)onProgress('build',`正在构建模型…`,progress,`${end}/${meshes.length} 网格`);
+
+        if(end<meshes.length){
+          requestAnimationFrame(()=>buildMeshes(end));
+        }else{
+          if(!grp.children.length){finish(new Error('STEP无可渲染几何体'));return}
+          finish(null,grp);
+        }
+      }
+
+      if(onProgress)onProgress('build','正在构建模型…',0,`0/${meshes.length} 网格`);
+      buildMeshes(0);
+    };
+
+    const onErr=err=>{
+      console.error('STEP Worker error:',err);
+      finish(new Error('STEP引擎崩溃，请刷新页面重试'));
+    };
+
+    stepWorker.addEventListener('message',onMsg);
+    stepWorker.addEventListener('error',onErr);
+
+    // 60 秒超时保护
+    timeoutId=setTimeout(()=>finish(new Error('STEP解析超时（>60秒），文件可能过大或损坏')),60000);
+
+    if(onProgress)onProgress('parse','正在解析几何数据…',-1,'');
+
+    // 发送缓冲区（transfer 是单向的：主线程→Worker，不会影响 WASM 堆）
+    const transferBuf=buf instanceof ArrayBuffer?buf.slice(0):buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength);
+    stepWorker.postMessage({type:'parse',buffer:transferBuf},[transferBuf]);
+  });
+}
+
+// ========== Viewer ==========
+let renderer,scene,camera,controls,gridHelper,currentObject,animId;
+const vc=document.getElementById('viewer-container');
+const cv=document.getElementById('viewer-canvas');
+
+function initViewer(){
+  renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(45,1,.1,100000);
+  camera.position.set(5,3,5);
+
+  controls=new OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=true;controls.dampingFactor=.08;
+  controls.minDistance=.5;controls.maxDistance=10000;
+  controls.target.set(0,0,0);controls.update();
+
+  scene.add(new THREE.AmbientLight(0x404060,1.5));
+  const kl=new THREE.DirectionalLight(0xffffff,3);
+  kl.position.set(10,15,10);kl.castShadow=true;
+  kl.shadow.mapSize.set(2048,2048);kl.shadow.camera.near=.5;kl.shadow.camera.far=50;
+  kl.shadow.camera.left=-10;kl.shadow.camera.right=10;kl.shadow.camera.top=10;kl.shadow.camera.bottom=-10;
+  kl.shadow.bias=-.0001;scene.add(kl);
+
+  scene.add(new THREE.DirectionalLight(0x8899cc,1.5).position.set(-5,2,-3)||null);
+  const rl=new THREE.DirectionalLight(0xaaccff,1);rl.position.set(0,-1,5);scene.add(rl);
+
+  gridHelper=new THREE.GridHelper(10,20,0x444466,0x222244);scene.add(gridHelper);
+  const gnd=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.ShadowMaterial({opacity:.2}));
+  gnd.rotation.x=-Math.PI/2;gnd.position.y=-5;gnd.receiveShadow=true;gnd.name='shadowGround';scene.add(gnd);
+
+  resizeViewer();window.addEventListener('resize',resizeViewer);
+  anim();
+}
+function resizeViewer(){const w=vc.clientWidth,h=vc.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+function anim(){animId=requestAnimationFrame(anim);controls.update();renderer.render(scene,camera)}
+
+function clearViewer(){
+  if(currentObject){dispose(currentObject);scene.remove(currentObject);currentObject=null}
+  document.getElementById('viewer-empty').style.display='flex';
+  document.getElementById('toolbar').style.display='none';
+  document.getElementById('model-info-overlay').style.display='none';
+}
+function dispose(o){o.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){Array.isArray(c.material)?c.material.forEach(m=>m.dispose()):c.material.dispose()}})}
+
+function displayModel(obj){
+  clearViewer();currentObject=obj;scene.add(obj);
+  document.getElementById('viewer-empty').style.display='none';
+  document.getElementById('toolbar').style.display='flex';
+  fitCamera(obj);
+
+  let faces=0,verts=0;
+  obj.traverse(c=>{if(c.isMesh&&c.geometry){const g=c.geometry;if(g.index)faces+=g.index.count/3;else if(g.attributes.position)faces+=g.attributes.position.count/3;if(g.attributes.position)verts+=g.attributes.position.count}});
+  document.getElementById('info-faces').textContent=Math.round(faces).toLocaleString();
+  document.getElementById('info-verts').textContent=verts.toLocaleString();
+  document.getElementById('model-info-overlay').style.display='block';
+
+  if(S.wireframe)setWireframe(true);
+
+  const box=new THREE.Box3().setFromObject(obj);
+  const g=scene.getObjectByName('shadowGround');if(g)g.position.y=box.min.y-.5;
+}
+
+function fitCamera(o){
+  const box=new THREE.Box3().setFromObject(o);
+  const center=new THREE.Vector3();box.getCenter(center);
+  const size=new THREE.Vector3();box.getSize(size);
+  const hsx=size.x/2,hsy=size.y/2,hsz=size.z/2;
+
+  // 等距视角方向
+  const dir=new THREE.Vector3(0.55,0.45,0.7).normalize();
+  const worldUp=new THREE.Vector3(0,1,0);
+  const right=new THREE.Vector3().crossVectors(dir,worldUp).normalize();
+  const up=new THREE.Vector3().crossVectors(right,dir).normalize();
+
+  // 包围盒半尺寸投影到屏幕平面
+  const halfW=Math.abs(right.x)*hsx+Math.abs(right.y)*hsy+Math.abs(right.z)*hsz;
+  const halfH=Math.abs(up.x)*hsx+Math.abs(up.y)*hsy+Math.abs(up.z)*hsz;
+  const halfD=Math.abs(dir.x)*hsx+Math.abs(dir.y)*hsy+Math.abs(dir.z)*hsz;
+
+  const fovRad=camera.fov*Math.PI/180;
+  const aspect=camera.aspect||1;
+  const tanHalf=Math.tan(fovRad/2);
+
+  // 包围盒完整显示所需距离：中心面距离 + 完整深度补偿
+  const distCenter=Math.max(halfW/(aspect*tanHalf),halfH/tanHalf);
+  // 关键：前表面比中心面更靠近相机 halfD，需要额外 halfD 距离来补偿
+  const dist=distCenter+halfD;
+
+  // 额外 30% margin 确保任何极端情况都不裁剪
+  const finalDist=dist*1.3;
+
+  controls.target.copy(center);
+  camera.position.copy(center).addScaledVector(dir,-finalDist);
+  controls.update();
+
+  // 确保相机 far plane 足够远
+  camera.far=Math.max(camera.far,finalDist+size.length()+100);
+  camera.updateProjectionMatrix();
+}
+
+function setView(dir){
+  if(!currentObject)return;
+  const box=new THREE.Box3().setFromObject(currentObject);
+  const center=new THREE.Vector3();box.getCenter(center);
+  const size=new THREE.Vector3();box.getSize(size);
+  const fovRad=camera.fov*Math.PI/180;
+  const aspect=camera.aspect||1;
+  const tanHalf=Math.tan(fovRad/2);
+
+  controls.target.copy(center);
+  let d;
+  if(dir==='top'){
+    // 从上往下看，XZ 平面占满屏幕
+    d=Math.max(size.x/(2*aspect*tanHalf),size.z/(2*tanHalf))+size.y/2;
+    camera.position.set(center.x,center.y+d,center.z);
+  }else if(dir==='front'){
+    d=Math.max(size.x/(2*aspect*tanHalf),size.y/(2*tanHalf))+size.z/2;
+    camera.position.set(center.x,center.y,center.z+d);
+  }else if(dir==='right'){
+    d=Math.max(size.z/(2*aspect*tanHalf),size.y/(2*tanHalf))+size.x/2;
+    camera.position.set(center.x+d,center.y,center.z);
+  }
+  controls.update();
+}
+
+function setWireframe(v){if(!currentObject)return;currentObject.traverse(c=>{if(c.isMesh&&c.material)c.material.wireframe=v})}
+
+// Toolbar
+document.getElementById('btn-fit').addEventListener('click',()=>{if(currentObject)fitCamera(currentObject)});
+document.getElementById('btn-reset').addEventListener('click',()=>{if(currentObject){fitCamera(currentObject);toast('视角已重置')}});
+document.getElementById('btn-top').addEventListener('click',()=>setView('top'));
+document.getElementById('btn-front').addEventListener('click',()=>setView('front'));
+document.getElementById('btn-right').addEventListener('click',()=>setView('right'));
+document.getElementById('btn-grid').addEventListener('click',()=>{S.showGrid=!S.showGrid;if(gridHelper)gridHelper.visible=S.showGrid;document.getElementById('btn-grid').classList.toggle('active',S.showGrid)});
+document.getElementById('btn-wireframe').addEventListener('click',()=>{S.wireframe=!S.wireframe;setWireframe(S.wireframe);document.getElementById('btn-wireframe').classList.toggle('active',S.wireframe)});
+
+// Keyboard
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  switch(e.key.toLowerCase()){
+    case'f':case'r':if(currentObject)fitCamera(currentObject);break;
+    case'g':document.getElementById('btn-grid').click();break;
+    case'w':document.getElementById('btn-wireframe').click();break;
+  }
+});
+
+// ========== Upload (DB projects only) ==========
+const ua=document.getElementById('upload-area');
+const fi=document.getElementById('file-input');
+ua.addEventListener('click',()=>fi.click());
+ua.addEventListener('dragover',e=>{e.preventDefault();ua.classList.add('drag-over')});
+ua.addEventListener('dragleave',()=>ua.classList.remove('drag-over'));
+ua.addEventListener('drop',e=>{e.preventDefault();ua.classList.remove('drag-over');handleFiles(Array.from(e.dataTransfer.files))});
+fi.addEventListener('change',()=>{handleFiles(Array.from(fi.files));fi.value=''});
+vc.addEventListener('dragover',e=>e.preventDefault());
+vc.addEventListener('drop',e=>{e.preventDefault();handleFiles(Array.from(e.dataTransfer.files))});
+
+async function handleFiles(files){
+  if(!pid()){toast('请先选择项目',true);return}
+  const p=S.projects.find(x=>x.id===pid());
+  if(p&&p.type==='local'){toast('本地项目请直接在文件夹中添加文件后点击刷新',true);return}
+
+  const exts=['.step','.stp','.stl','.obj','.gltf','.glb'];
+  const validFiles=files.filter(f=>exts.includes('.'+f.name.split('.').pop().toLowerCase()));
+  if(!validFiles.length){toast('没有有效文件',true);return}
+
+  let ok=0,sk=0;
+  const total=validFiles.length;
+  showUploadProgress(0,total);
+
+  for(let i=0;i<validFiles.length;i++){
+    const f=validFiles[i];
+    const ext='.'+f.name.split('.').pop().toLowerCase();
+
+    await new Promise(r=>setTimeout(r,0));
+
+    try{
+      if(USE_CLOUD){
+        // FormData multipart 上传到云端
+        const mId=gid();
+        const fd=new FormData();
+        fd.append('projectId',pid());
+        fd.append('id',mId);
+        fd.append('file',f);
+        const saved=await apiFetch('/models',{method:'POST',body:fd});
+        saved.isLocal=false;
+        saved.data=undefined;
+        S.models.unshift(saved);ok++;
+      }else{
+        // IndexedDB 本地存储
+        const buf=await f.arrayBuffer();
+        if(buf.byteLength>5*1024*1024)await new Promise(r=>setTimeout(r,0));
+        const m={id:gid(),projectId:pid(),name:f.name,format:ext.slice(1),size:f.size,data:buf,isLocal:false,uploadedAt:new Date().toISOString()};
+        await dba('models',m);
+        S.models.unshift(m);ok++;
+        if(buf.byteLength>5*1024*1024)await new Promise(r=>setTimeout(r,0));
+      }
+    }catch(e){console.error(e);sk++;}
+
+    showUploadProgress(i+1);
+  }
+
+  hideUploadProgress();
+  if(ok){renderModelList();toast(`已导入 ${ok} 个文件`+(sk?`，${sk} 个跳过`:''));if(S.models.length===ok&&ok>0)await viewModel(S.models[0].id)}
+  else toast('导入失败',true);
+}
+
+// ========== UI Render ==========
+function renderProjectList(){
+  const c=document.getElementById('project-list');
+  if(!S.projects.length){c.innerHTML='<div class="empty-state" style="padding:16px 0"><div class="icon">📁</div><span>暂无项目，点击 + 创建</span></div>';return}
+  c.innerHTML=S.projects.map(p=>{
+    const a=p.id===pid();
+    const typeBadge=p.type==='local'?'<span class="badge local">📂 本地</span>':'<span class="badge">☁️ 云端</span>';
+    const count=a?S.models.length:'…';
+    return`<div class="project-item${a?' active':''}" onclick="window._selectProject('${p.id}')">
+      <span class="project-name-inner">${escHtml(p.name)}</span>
+      ${typeBadge}
+      <span class="badge">${count}</span>
+      <span class="project-actions" onclick="event.stopPropagation()">
+        <button title="重命名" onclick="window._renameProject('${p.id}','${escAttr(p.name)}')">✎</button>
+        <button title="删除" onclick="window._delProject('${p.id}','${escAttr(p.name)}')">✕</button>
+      </span></div>`;
+  }).join('');
+}
+
+function renderModelList(){
+  const c=document.getElementById('model-list');
+  if(!pid()){
+    c.innerHTML='<div class="empty-state"><div class="icon">📦</div><span>选择项目后即可查看模型</span></div>';
+    document.getElementById('upload-area').style.display='none';
+    document.getElementById('folder-info').style.display='none';
+    document.getElementById('toolbar').style.display='none';
+    return;
+  }
+  const p=S.projects.find(x=>x.id===pid());
+  document.getElementById('upload-area').style.display=p&&p.type==='db'?'block':'none';
+  document.getElementById('folder-info').style.display=p&&p.type==='local'?'block':'none';
+
+  if(!S.models.length){
+    const msg=p&&p.type==='local'?'文件夹中没有支持的模型文件，<br>添加文件后点击"刷新"':'拖拽文件或点击上传';
+    c.innerHTML=`<div class="empty-state"><div class="icon">${p&&p.type==='local'?'📂':'📤'}</div><span>${msg}</span></div>`;
+    return;
+  }
+  const icons={step:'⚙️',stp:'⚙️',stl:'🔷',obj:'🔶',gltf:'🌐',glb:'🧊'};
+  c.innerHTML=S.models.map(m=>{
+    const a=m.id===mid();
+    return`<div class="model-item${a?' active':''}" onclick="window._viewModel('${m.id}')">
+      <div class="model-icon">${icons[m.format]||'📄'}</div>
+      <div class="model-info"><div class="model-name">${escHtml(m.name)}</div>
+        <div class="model-meta"><span class="format-badge">${m.format.toUpperCase()}</span><span>${m.size?formatSize(m.size):'—'}</span></div></div>
+      <span class="model-actions" onclick="event.stopPropagation()">
+        <button class="btn-del" onclick="window._delModel('${m.id}','${escAttr(m.name)}')" title="删除">✕</button>
+      </span></div>`;
+  }).join('');
+}
+
+// ========== Loading state ==========
+let cancelLoadFlag=false;
+function showLoading(v,name){
+  const empty=document.getElementById('viewer-empty');
+  const loading=document.getElementById('viewer-loading');
+  const nm=document.getElementById('loading-name');
+  const phase=document.getElementById('loading-phase');
+  const prog=document.getElementById('loading-progress');
+  const cancel=document.getElementById('btn-cancel-load');
+  const fill=document.getElementById('loading-bar-fill');
+  const txt=document.getElementById('loading-bar-text');
+
+  cancelLoadFlag=false;
+  if(v){
+    empty.style.display='none';
+    loading.style.display='flex';
+    nm.textContent=name||'';
+    nm.style.display=name?'block':'none';
+    phase.textContent='正在加载模型…';
+    prog.style.display='none';
+    cancel.style.display='block';
+    fill.style.width='0';txt.textContent='';
+  }else{
+    loading.style.display='none';
+    cancel.style.display='none';
+    // 仅在无模型时显示 empty，避免覆盖 displayModel 已隐藏的 empty
+    if(!currentObject)empty.style.display='flex';
+    nm.textContent='';
+    prog.style.display='none';
+    cancelLoadFlag=false;
+  }
+}
+
+function updateLoadingPhase(phase,subText,progress,progressText){
+  document.getElementById('loading-phase').textContent=phase;
+  const prog=document.getElementById('loading-progress');
+  if(progress>=0){
+    prog.style.display='block';
+    document.getElementById('loading-bar-fill').style.width=progress+'%';
+    document.getElementById('loading-bar-text').textContent=progressText||(progress+'%');
+  }else{
+    prog.style.display='none';
+  }
+}
+
+window._cancelLoad=function(){
+  if(!cancelLoadFlag&&document.getElementById('viewer-loading').style.display==='none')return; // 没有在加载
+  cancelLoadFlag=true;
+  // 中断 Worker：terminate 然后重建
+  if(stepWorker){
+    try{stepWorker.terminate()}catch(e){}
+    stepWorker=null;
+    stepWorkerReady=false;
+  }
+  showLoading(false);
+  // 重新创建 Worker
+  initStepWorker();
+  toast('已取消加载');
+};
+
+function renderAll(){renderProjectList();renderModelList()}
+
+function formatSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB'}
+function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function escAttr(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;')}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+
+// Global functions
+window._selectProject=id=>selectProject(id);
+window._viewModel=id=>viewModel(id);
+window._delProject=(id,name)=>confirmDelete('project',id,name);
+window._delModel=(id,name)=>confirmDelete('model',id,name);
+window._renameProject=(id,name)=>{
+  document.getElementById('modal-title').textContent='重命名项目';
+  document.getElementById('project-name-input').value=name;
+  document.getElementById('project-name-input').placeholder='输入新名称...';
+  document.getElementById('btn-confirm-project').textContent='保存';
+  document.getElementById('btn-confirm-project').dataset.mode='rename';
+  document.getElementById('btn-confirm-project').dataset.renameId=id;
+  document.getElementById('project-type-row').style.display='none';
+  document.getElementById('folder-picker-section').style.display='none';
+  openModal('project-modal');
+  document.getElementById('project-name-input').focus();document.getElementById('project-name-input').select();
+  // Restore on close
+  const origClose=document.querySelector('#project-modal .btn-cancel').onclick;
+  document.querySelector('#project-modal .btn-cancel').onclick=()=>{
+    document.getElementById('project-type-row').style.display='flex';
+    document.getElementById('folder-picker-section').style.display=selectedType==='local'?'block':'none';
+    closeModal('project-modal');
+  };
+};
+window.toggleSidebar=toggleSidebar;
+
+// ========== Init ==========
+async function init(){
+  // 运行时探测：API 联通就用云端，不通就回退 IndexedDB
+  try{
+    const res=await fetch('/api/ping');
+    if(res.ok&&(await res.json()).ok){USE_CLOUD=true;console.log('Storage: cloud')}
+  }catch(e){console.warn('API unreachable, using local storage')}
+
+  try{
+    if(USE_CLOUD){
+      S.projects=await apiFetch('/projects');
+      S.projects.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+    }else{
+      await openDB();
+      S.projects=(await dbaa('projects')).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+    }
+  }catch(e){console.error('Load projects:',e);S.projects=[]}
+
+  initViewer();
+  renderAll();
+  if(S.projects.length>0)await selectProject(S.projects[0].id);
+  document.getElementById('btn-grid').classList.toggle('active',S.showGrid);
+  document.getElementById('btn-wireframe').classList.toggle('active',S.wireframe);
+}
+init().catch(e=>{console.error(e);showError('初始化失败: '+e.message)});
+</script>
+</body>
+</html>

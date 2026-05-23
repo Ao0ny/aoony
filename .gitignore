@@ -1,0 +1,3 @@
+﻿# Netlify build artifacts
+.netlify/
+node_modules/

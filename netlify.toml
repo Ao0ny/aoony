@@ -1,0 +1,20 @@
+# Netlify 部署配置 - 3D 模型查看器
+[build]
+  publish = "."
+
+[functions]
+  # Functions 目录（相对于项目根目录即 deploy/）
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# API 路由：将所有 /api/* 请求转发到 Functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+# SPA 兼容（如果有的话）
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
