@@ -1,28 +1,10 @@
 // 3D 模型查看器 - Netlify Functions API
 // 基于 Netlify Blobs 的云端存储后端
-// 路由：/api/projects, /api/models, /api/model-data, /api/ping
 
-// 动态加载 blobs，避免模块级 import 崩溃导致整个函数不可用
-let _getStoreFn = null;
-let _store = null;
-let _storeErr = null;
+import { getStore } from "@netlify/blobs";
 
-async function getBlobStore() {
-  if (_storeErr) throw _storeErr;
-  if (_store) return _store;
-  try {
-    // 动态导入，失败也不影响 ping 等端点
-    if (!_getStoreFn) {
-      const blobs = await import("@netlify/blobs");
-      _getStoreFn = blobs.getStore;
-    }
-    _store = _getStoreFn("3d-viewer");
-    return _store;
-  } catch (e) {
-    _storeErr = e;
-    throw e;
-  }
-}
+// Blob 存储实例
+const STORE = getStore("3d-viewer");
 
 // CORS 头
 const CORS = {
@@ -101,7 +83,7 @@ async function ping() {
 // —— 项目操作 ——
 async function listProjects() {
   try {
-    const data = await getBlobStore().get("projects", { type: "json" });
+    const data = await STORE.get("projects", { type: "json" });
     return json(data || []);
   } catch (e) {
     console.error("listProjects:", e);
@@ -118,34 +100,34 @@ async function createProject(body) {
     createdAt: body.createdAt || new Date().toISOString(),
     folderHandleId: body.folderHandleId || null,
   };
-  const projects = (await getBlobStore().get("projects", { type: "json" })) || [];
+  const projects = (await STORE.get("projects", { type: "json" })) || [];
   projects.push(project);
-  await getBlobStore().set("projects", JSON.stringify(projects));
+  await STORE.set("projects", JSON.stringify(projects));
   return json(project, 201);
 }
 
 async function updateProject(id, body) {
-  const projects = (await getBlobStore().get("projects", { type: "json" })) || [];
+  const projects = (await STORE.get("projects", { type: "json" })) || [];
   const idx = projects.findIndex((p) => p.id === id);
   if (idx === -1) return error("项目不存在", 404);
 
   projects[idx] = { ...projects[idx], ...body, id }; // 确保 id 不变
-  await getBlobStore().set("projects", JSON.stringify(projects));
+  await STORE.set("projects", JSON.stringify(projects));
   return json(projects[idx]);
 }
 
 async function deleteProject(id) {
-  let projects = (await getBlobStore().get("projects", { type: "json" })) || [];
+  let projects = (await STORE.get("projects", { type: "json" })) || [];
   projects = projects.filter((p) => p.id !== id);
-  await getBlobStore().set("projects", JSON.stringify(projects));
+  await STORE.set("projects", JSON.stringify(projects));
 
   // 删除该项目的所有模型数据和元数据
   const modelsKey = `models:${id}`;
-  const models = (await getBlobStore().get(modelsKey, { type: "json" })) || [];
+  const models = (await STORE.get(modelsKey, { type: "json" })) || [];
   const deletions = models.map((m) =>
-    getBlobStore().delete(`model-data:${m.id}`).catch(() => {})
+    STORE.delete(`model-data:${m.id}`).catch(() => {})
   );
-  deletions.push(getBlobStore().delete(modelsKey));
+  deletions.push(STORE.delete(modelsKey));
   await Promise.all(deletions);
 
   return json({ ok: true });
@@ -154,7 +136,7 @@ async function deleteProject(id) {
 // —— 模型操作 ——
 async function listModels(projectId) {
   try {
-    const data = await getBlobStore().get(`models:${projectId}`, { type: "json" });
+    const data = await STORE.get(`models:${projectId}`, { type: "json" });
     // 返回元数据，不包含二进制数据
     const models = (data || []).map(({ data, ...meta }) => meta);
     return json(models);
@@ -195,13 +177,13 @@ async function uploadModel(request) {
 
   // 写入二进制数据和元数据
   await Promise.all([
-    getBlobStore().set(`model-data:${modelId}`, new Uint8Array(buffer)),
+    STORE.set(`model-data:${modelId}`, new Uint8Array(buffer)),
     (async () => {
       const modelsKey = `models:${projectId}`;
       const models =
-        (await getBlobStore().get(modelsKey, { type: "json" })) || [];
+        (await STORE.get(modelsKey, { type: "json" })) || [];
       models.push(modelMeta);
-      await getBlobStore().set(modelsKey, JSON.stringify(models));
+      await STORE.set(modelsKey, JSON.stringify(models));
     })(),
   ]);
 
@@ -210,28 +192,28 @@ async function uploadModel(request) {
 
 async function deleteModel(modelId) {
   // 遍历所有项目找到该模型
-  const projects = (await getBlobStore().get("projects", { type: "json" })) || [];
+  const projects = (await STORE.get("projects", { type: "json" })) || [];
   let found = false;
   for (const p of projects) {
     const modelsKey = `models:${p.id}`;
-    const models = (await getBlobStore().get(modelsKey, { type: "json" })) || [];
+    const models = (await STORE.get(modelsKey, { type: "json" })) || [];
     const idx = models.findIndex((m) => m.id === modelId);
     if (idx !== -1) {
       models.splice(idx, 1);
-      await getBlobStore().set(modelsKey, JSON.stringify(models));
+      await STORE.set(modelsKey, JSON.stringify(models));
       found = true;
       break;
     }
   }
 
-  await getBlobStore().delete(`model-data:${modelId}`).catch(() => {});
+  await STORE.delete(`model-data:${modelId}`).catch(() => {});
 
   return json({ ok: true, found });
 }
 
 async function getModelData(modelId) {
   try {
-    const data = await getBlobStore().get(`model-data:${modelId}`, {
+    const data = await STORE.get(`model-data:${modelId}`, {
       type: "arrayBuffer",
     });
     if (!data) {
@@ -246,6 +228,15 @@ async function getModelData(modelId) {
 
 // —— 主入口 ——
 export default async function handler(request) {
+  try {
+    return await handleRequest(request);
+  } catch (e) {
+    console.error("[api] Fatal:", e.message, e.stack);
+    return error("服务端错误: " + (e.message || "unknown"), 500);
+  }
+}
+
+async function handleRequest(request) {
   // 预检请求
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS });
